@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.env
+models/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+.idea/
+.vscode/
+.DS_Store

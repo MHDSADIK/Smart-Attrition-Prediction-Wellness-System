@@ -69,6 +69,7 @@ st.markdown("""
         color: #1a1a2e;
     }
     .recommendation-card {
+        color: #333;
         background: #f0faf5;
         border-left: 3px solid #1D9E75;
         padding: 12px 16px;
@@ -351,29 +352,36 @@ with tab1:
     m3.metric("Avg Precision", attrition_results["avg_precision"])
     m4.metric("CV Std", f"± {attrition_results['cv_auc_std']}")
 
-    # Feature importances
-    col_fi, col_cm = st.columns(2)
-    with col_fi:
-        fi_df = attrition_results["feature_importances"].head(15)
-        fig_fi = px.bar(
-            fi_df[::-1], x="importance", y="feature", orientation="h",
-            color="importance", color_continuous_scale="Purples",
-            title="Top 15 Feature Importances"
-        )
-        fig_fi.update_layout(showlegend=False)
-        st.plotly_chart(fig_fi, use_container_width=True)
+    
+    # Confusion Matrix
+    st.markdown("---")
+    st.subheader("Confusion Matrix")
 
-    # Confusion matrix
-    with col_cm:
-        cm = attrition_results["confusion_matrix"]
-        fig_cm = px.imshow(
-            cm,
-            labels=dict(x="Predicted", y="Actual", color="Count"),
-            x=["Stayed", "Left"], y=["Stayed", "Left"],
-            text_auto=True, color_continuous_scale="Blues",
-            title="Confusion Matrix"
-        )
-        st.plotly_chart(fig_cm, use_container_width=True)
+    cm = attrition_results["confusion_matrix"]
+
+    fig_cm = px.imshow(
+        cm,
+        labels=dict(
+            x="Predicted",
+            y="Actual",
+            color="Count"
+        ),
+        x=["Stayed", "Left"],
+        y=["Stayed", "Left"],
+        text_auto=True,
+        color_continuous_scale="Blues",
+        title="Model Prediction Results"
+    )
+
+    fig_cm.update_layout(
+        height=500,
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
+
+    st.plotly_chart(
+        fig_cm,
+        use_container_width=True
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -497,228 +505,248 @@ with tab2:
 # ──────────────────────────────────────────────────────────────────────────────
 with tab3:
     st.header("What-If Scenario Simulator")
-    st.markdown("Adjust HR levers and instantly see how attrition risk changes.")
 
-    # Select employee
-    wi_idx = st.number_input(
-        "Base employee row index",
-        min_value=0, max_value=len(df_raw) - 1, value=0,
-        key="whatif_idx"
+    emp_idx = st.number_input(
+        "Employee Index",
+        min_value=0,
+        max_value=len(df_raw) - 1,
+        value=0
     )
-    base_row = df_clean.iloc[wi_idx].to_dict()
-    base_result = predict_individual(
-        attrition_results["model"], preprocessor,
-        base_row, numeric_cols, categorical_cols
-    )                                                      #{"probability": round(prob, 4), "risk_tier": risk_tier, "tier_color": tier_color}
 
-    st.markdown(f"**Baseline risk:** `{base_result['probability']*100:.1f}%` — {base_result['risk_tier']}")
+    base_row = df_clean.iloc[emp_idx].to_dict()
+
+    baseline = predict_individual(
+        attrition_results["model"],
+        preprocessor,
+        base_row,
+        numeric_cols,
+        categorical_cols
+    )
+
+    st.metric(
+        "Current Attrition Risk",
+        f"{baseline['probability'] * 100:.1f}%"
+    )
 
     st.markdown("---")
-    st.subheader("Adjust HR levers")
+    st.subheader("Adjust Key Factors")
 
     changes = {}
-    sim_cols = st.columns(2)
 
-    # Salary slider
-    with sim_cols[0]:
+    col1, col2 = st.columns(2)
+
+    with col1:
+
         if "MonthlyIncome" in base_row:
-            cur_inc = int(base_row.get("MonthlyIncome", 5000))
-            new_inc = st.slider(
-                "Monthly Income", 1000, 20000, cur_inc, step=500,
-                help="Current value highlighted"
+            income = st.slider(
+                "Monthly Income",
+                1000,
+                20000,
+                int(base_row["MonthlyIncome"]),
+                step=500
             )
-            if new_inc != cur_inc:
-                changes["MonthlyIncome"] = new_inc
+
+            if income != base_row["MonthlyIncome"]:
+                changes["MonthlyIncome"] = income
 
         if "JobSatisfaction" in base_row:
-            cur_sat = int(base_row.get("JobSatisfaction", 2))
-            new_sat = st.slider("Job Satisfaction (1-4)", 1, 4, cur_sat)
-            if new_sat != cur_sat:
-                changes["JobSatisfaction"] = new_sat
+            satisfaction = st.slider(
+                "Job Satisfaction",
+                1,
+                4,
+                int(base_row["JobSatisfaction"])
+            )
+
+            if satisfaction != base_row["JobSatisfaction"]:
+                changes["JobSatisfaction"] = satisfaction
+
+    with col2:
 
         if "WorkLifeBalance" in base_row:
-            cur_wlb = int(base_row.get("WorkLifeBalance", 2))
-            new_wlb = st.slider("Work-Life Balance (1-4)", 1, 4, cur_wlb)
-            if new_wlb != cur_wlb:
-                changes["WorkLifeBalance"] = new_wlb
+            wlb = st.slider(
+                "Work-Life Balance",
+                1,
+                4,
+                int(base_row["WorkLifeBalance"])
+            )
 
-    with sim_cols[1]:
+            if wlb != base_row["WorkLifeBalance"]:
+                changes["WorkLifeBalance"] = wlb
+
         if "OverTime" in base_row:
-            cur_ot = int(base_row.get("OverTime", 0))
-            new_ot = st.selectbox("Overtime", [0, 1], index=cur_ot,
-                                   format_func=lambda x: "Yes" if x == 1 else "No")
-            if new_ot != cur_ot:
-                changes["OverTime"] = new_ot
 
-        if "YearsAtCompany" in base_row:
-            cur_yrs = int(base_row.get("YearsAtCompany", 1))
-            new_yrs = st.slider("Years at Company", 0, 40, cur_yrs)
-            if new_yrs != cur_yrs:
-                changes["YearsAtCompany"] = new_yrs
+            overtime = st.selectbox(
+                "Overtime",
+                [0, 1],
+                index=int(base_row["OverTime"]),
+                format_func=lambda x: "Yes" if x else "No"
+            )
 
-        if "EnvironmentSatisfaction" in base_row:
-            cur_env = int(base_row.get("EnvironmentSatisfaction", 2))
-            new_env = st.slider("Environment Satisfaction (1-4)", 1, 4, cur_env)
-            if new_env != cur_env:
-                changes["EnvironmentSatisfaction"] = new_env
+            if overtime != base_row["OverTime"]:
+                changes["OverTime"] = overtime
 
-    # Run simulation
     if changes:
-        sim_result = run_whatif(
-            attrition_results["model"], preprocessor,
-            base_row, changes, numeric_cols, categorical_cols
+
+        result = run_whatif(
+            attrition_results["model"],
+            preprocessor,
+            base_row,
+            changes,
+            numeric_cols,
+            categorical_cols
         )
 
-        st.markdown("---")
-        col_b, col_m, col_d = st.columns(3)
-        col_b.metric(
+        baseline_risk = result["baseline"]["probability"] * 100
+        modified_risk = result["modified"]["probability"] * 100
+
+        col_a, col_b, col_c = st.columns(3)
+
+        col_a.metric(
             "Baseline Risk",
-            f"{sim_result['baseline']['probability']*100:.1f}%",
-            delta=None
+            f"{baseline_risk:.1f}%"
         )
-        col_m.metric(
+
+        col_b.metric(
             "Modified Risk",
-            f"{sim_result['modified']['probability']*100:.1f}%",
-            delta=f"{sim_result['delta']*100:+.1f}%",
-            delta_color="inverse"
+            f"{modified_risk:.1f}%"
         )
-        direction_emoji = "✅ Risk reduced" if sim_result["direction"] == "improved" else "⚠️ Risk increased"
-        col_d.markdown(f"### {direction_emoji}")
 
-        # Before/after comparison bar chart
-        comp_df = pd.DataFrame({
+        col_c.metric(
+            "Change",
+            f"{modified_risk - baseline_risk:+.1f}%"
+        )
+
+        comparison_df = pd.DataFrame({
             "Scenario": ["Baseline", "Modified"],
-            "Risk %": [
-                sim_result["baseline"]["probability"] * 100,
-                sim_result["modified"]["probability"] * 100
-            ]
+            "Risk": [baseline_risk, modified_risk]
         })
-        fig_comp = px.bar(
-            comp_df, x="Scenario", y="Risk %",
+
+        fig = px.bar(
+            comparison_df,
+            x="Scenario",
+            y="Risk",
             color="Scenario",
-            color_discrete_map={
-                "Baseline": "#7F77DD",
-                "Modified": "#1D9E75" if sim_result["direction"] == "improved" else "#E24B4A"
-            },
-            title="Risk Comparison: Baseline vs Modified",
-            range_y=[0, 100]
+            title="Risk Comparison"
         )
-        fig_comp.add_hline(y=70, line_dash="dash", line_color="#E24B4A", annotation_text="High Risk threshold")
-        fig_comp.add_hline(y=40, line_dash="dash", line_color="#EF9F27", annotation_text="Medium Risk threshold")
-        st.plotly_chart(fig_comp, use_container_width=True)
 
-        # Show what changed
-        st.markdown("**Changes applied:**")
-        for k, v in changes.items():
-            orig = base_row.get(k, "N/A")
-            st.markdown(f"- `{k}`: {orig} → **{v}**")
+        fig.update_layout(
+            height=350,
+            showlegend=False
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        st.subheader("Changes Applied")
+
+        st.dataframe(
+            pd.DataFrame({
+                "Feature": list(changes.keys()),
+                "New Value": list(changes.values())
+            }),
+            hide_index=True,
+            use_container_width=True
+        )
+
     else:
-        st.info("Adjust any lever above to simulate the effect on attrition risk.")
-
-
+        st.info("Adjust any factor to simulate its impact on attrition risk.")
 # ──────────────────────────────────────────────────────────────────────────────
 # TAB 4: COHORT ANALYSIS
 # ──────────────────────────────────────────────────────────────────────────────
 with tab4:
     st.header("Cohort Risk Analysis")
 
-    all_probs_4 = attrition_results["model"].predict_proba(X_transformed)[:, 1]
-    scored_raw = df_raw.copy()
-    scored_raw["Risk_Score"] = all_probs_4
-    scored_raw["Attrition_Actual"] = y.values
+    all_probs = attrition_results["model"].predict_proba(X_transformed)[:, 1]
+
+    cohort_source = df_raw.copy()
+    cohort_source["Risk_Score"] = all_probs
+    cohort_source["Attrition_Actual"] = y.values
 
     group_col = st.selectbox(
-        "Group by",
-        [c for c in ["Department", "JobRole", "MaritalStatus", "Gender",
-                      "BusinessTravel", "Education", "JobLevel"]
-         if c in scored_raw.columns],
-        index=0
+        "Analyze by",
+        [
+            c for c in [
+                "Department",
+                "JobRole",
+                "Gender",
+                "MaritalStatus",
+                "BusinessTravel",
+                "Education",
+                "JobLevel"
+            ]
+            if c in cohort_source.columns
+        ]
     )
 
     cohort_df = (
-        scored_raw.groupby(group_col)
+        cohort_source
+        .groupby(group_col)
         .agg(
-            Count=("Risk_Score", "count"),
+            Employees=("Risk_Score", "count"),
             Mean_Risk=("Risk_Score", "mean"),
-            High_Risk_Count=("Risk_Score", lambda x: (x >= 0.7).sum()),
-            Actual_Attrition=("Attrition_Actual", "mean")
+            Attrition=("Attrition_Actual", "mean")
         )
         .reset_index()
     )
-    cohort_df["Mean_Risk_%"] = (cohort_df["Mean_Risk"] * 100).round(1)
-    cohort_df["Actual_Attrition_%"] = (cohort_df["Actual_Attrition"] * 100).round(1)
-    cohort_df["High_Risk_%"] = (cohort_df["High_Risk_Count"] / cohort_df["Count"] * 100).round(1)
 
-    # Bubble chart: mean risk vs cohort size
-    fig_bubble = px.scatter(
-        cohort_df,
+    cohort_df["Mean_Risk_%"] = (
+        cohort_df["Mean_Risk"] * 100
+    ).round(1)
+
+    cohort_df["Attrition_%"] = (
+        cohort_df["Attrition"] * 100
+    ).round(1)
+
+    # Main visualization
+    fig = px.bar(
+        cohort_df.sort_values(
+            "Mean_Risk_%",
+            ascending=False
+        ),
         x=group_col,
         y="Mean_Risk_%",
-        size="Count",
+        text="Mean_Risk_%",
         color="Mean_Risk_%",
-        color_continuous_scale=["#1D9E75", "#EF9F27", "#E24B4A"],
-        hover_data=["Count", "High_Risk_Count", "Actual_Attrition_%"],
-        title=f"Mean Attrition Risk by {group_col} (bubble size = headcount)",
-        range_color=[0, 100]
+        color_continuous_scale=[
+            "#1D9E75",
+            "#EF9F27",
+            "#E24B4A"
+        ],
+        title=f"Average Attrition Risk by {group_col}"
     )
-    fig_bubble.update_xaxes(tickangle=30)
-    st.plotly_chart(fig_bubble, use_container_width=True)
 
-    # Heatmap: if two categorical columns available
-    col_a, col_b = st.columns(2)
-    with col_a:
-        fig_bar = px.bar(
-            cohort_df.sort_values("Mean_Risk_%", ascending=False),
-            x=group_col, y="Mean_Risk_%",
-            color="Mean_Risk_%",
-            color_continuous_scale=["#1D9E75", "#EF9F27", "#E24B4A"],
-            title=f"Mean Risk Score by {group_col}"
-        )
-        fig_bar.update_xaxes(tickangle=30)
-        st.plotly_chart(fig_bar, use_container_width=True)
+    fig.update_layout(
+        height=450,
+        xaxis_title="",
+        yaxis_title="Risk (%)",
+        coloraxis_showscale=False
+    )
 
-    with col_b:
-        fig_bar2 = px.bar(
-            cohort_df.sort_values("High_Risk_%", ascending=False),
-            x=group_col, y="High_Risk_%",
-            color="High_Risk_%",
-            color_continuous_scale=["#1D9E75", "#EF9F27", "#E24B4A"],
-            title=f"% High-Risk Employees by {group_col}"
-        )
-        fig_bar2.update_xaxes(tickangle=30)
-        st.plotly_chart(fig_bar2, use_container_width=True)
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
 
-    # Age bucket analysis
-    if "Age" in scored_raw.columns:
-        st.markdown("---")
-        st.subheader("Age Group Risk Breakdown")
-        scored_raw["Age_Group"] = pd.cut(
-            scored_raw["Age"],
-            bins=[18, 25, 35, 45, 55, 70],
-            labels=["18-25", "26-35", "36-45", "46-55", "55+"]
-        )
-        age_df = (
-            scored_raw.groupby("Age_Group", observed=True)
-            .agg(Count=("Risk_Score", "count"), Mean_Risk=("Risk_Score", "mean"))
-            .reset_index()
-        )
-        age_df["Mean_Risk_%"] = (age_df["Mean_Risk"] * 100).round(1)
-        fig_age = px.bar(
-            age_df, x="Age_Group", y="Mean_Risk_%",
-            text="Count",
-            color="Mean_Risk_%",
-            color_continuous_scale=["#1D9E75", "#EF9F27", "#E24B4A"],
-            title="Mean Attrition Risk by Age Group (text = headcount)"
-        )
-        st.plotly_chart(fig_age, use_container_width=True)
-
-    # Full cohort table
     st.markdown("---")
-    st.subheader("Cohort Summary Table")
-    display_cohort = cohort_df[[group_col, "Count", "Mean_Risk_%", "High_Risk_Count", "High_Risk_%", "Actual_Attrition_%"]]
+
+    st.subheader("Cohort Summary")
+
     st.dataframe(
-        display_cohort.sort_values("Mean_Risk_%", ascending=False),
-        use_container_width=True, hide_index=True
+        cohort_df[
+            [
+                group_col,
+                "Employees",
+                "Mean_Risk_%",
+                "Attrition_%"
+            ]
+        ].sort_values(
+            "Mean_Risk_%",
+            ascending=False
+        ),
+        use_container_width=True,
+        hide_index=True
     )
 
 
@@ -752,58 +780,126 @@ with tab5:
     # Cluster detail
     st.markdown("---")
     st.subheader("Cluster Details & HR Recommendations")
-
-    for cluster_id, info in profile_map.items():
+    risk_priority = {
+        "critical": 1,
+        "high_risk": 2,
+        "moderate": 3,
+        "healthy": 4
+        }
+    sorted_clusters = sorted(
+        profile_map.items(),
+        key=lambda x: risk_priority.get(
+            x[1].get("profile_key", ""),
+            999
+        )
+    )
+    risk_icons = {
+        "critical": "🔴",
+        "high_risk": "🟠",
+        "moderate": "🟡",
+        "healthy": "🟢"
+ }
+    for cluster_id, info in sorted_clusters:
+        cluster_pct = (info["cluster_size"] / total) * 100
+        badge = risk_icons.get(
+            info.get("profile_key", ""),
+            "⚪"
+        )
         with st.expander(
-            f"Cluster {cluster_id}: **{info['label']}** — {info['cluster_size']} employees",
+            f"{badge} Cluster {cluster_id}: {info['label']} ({cluster_pct:.1f}% of workforce)",
             expanded=(info["profile_key"] != "healthy")
         ):
-            c1, c2 = st.columns([1, 2])
-            with c1:
-                fig_radar_data = {
-                    "Metric": ["Satisfaction", "Work-Life Balance", "Income (norm)", "Overtime (inv)"],
-                    "Value": [
-                        info["mean_satisfaction"] / 4,
-                        info["mean_wlb"] / 4,
-                        min(info["mean_income"] / 15000, 1.0),
-                        1 - info["mean_overtime"]
-                    ]
-                }
-                fig_radar = go.Figure()
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=fig_radar_data["Value"] + [fig_radar_data["Value"][0]],
-                    theta=fig_radar_data["Metric"] + [fig_radar_data["Metric"][0]],
-                    fill="toself",
-                    fillcolor=info["color"],
-                    line_color=info["color"],
-                    opacity=0.5,
-                    name=info["label"]
-                ))
-                fig_radar.update_layout(
-                    polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+            left, right = st.columns([1, 2])
+            with left:
+                metrics = [
+                    "Satisfaction",
+                    "Work-Life Balance",
+                    "Income",
+                    "Overtime"
+                ]
+                values = [
+                    info["mean_satisfaction"] / 4,
+                    info["mean_wlb"] / 4,
+                    min(info["mean_income"] / 15000, 1),
+                    1 - info["mean_overtime"]
+                ]
+                fig = go.Figure() 
+                fig.add_trace(
+                    go.Scatterpolar(
+                        r=values + [values[0]],
+                        theta=metrics + [metrics[0]],
+                        fill="toself",
+                        fillcolor=info["color"],
+                        line_color=info["color"],
+                        opacity=0.6
+                    )
+                )  
+                fig.update_layout(
+                    polar=dict(
+                        radialaxis=dict(
+                            visible=True,
+                            range=[0, 1]
+                        )
+                    ),
                     showlegend=False,
-                    height=220,
-                    margin=dict(t=20, b=20, l=30, r=30)
+                    height=250,
+                    margin=dict(t=20, b=20, l=20, r=20)
                 )
-                st.plotly_chart(fig_radar, use_container_width=True)
 
-                st.markdown(f"""
-                | Metric | Value |
-                |---|---|
-                | Satisfaction | {info['mean_satisfaction']} / 4 |
-                | Work-Life Balance | {info['mean_wlb']} / 4 |
-                | Avg Monthly Income | ${info['mean_income']:,.0f} |
-                | Overtime Rate | {info['mean_overtime']*100:.0f}% |
-                """)
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
 
-            with c2:
-                st.markdown(f"#### Recommended HR Interventions")
-                for rec in info["recommendations"]:
-                    st.markdown(f"""
+                m1, m2 = st.columns(2)
+                m1.metric(
+                    "Satisfaction",
+                    f"{info['mean_satisfaction']:.2f}/4"
+                )
+                m2.metric(
+                    "Work-Life",
+                    f"{info['mean_wlb']:.2f}/4"
+                )
+
+                m3, m4 = st.columns(2)
+                m3.metric(
+                    "Income",
+                    f"₹{info['mean_income']:,.0f}"
+                )
+                m4.metric(
+                    "Overtime",
+                    f"{info['mean_overtime']*100:.0f}%"
+                )
+
+            with right:
+
+                st.markdown(
+                    f"### {badge} {info['label']}"
+                )
+
+                st.markdown(
+                    f"""
+                    **Employees:** {info['cluster_size']}  
+                    **Workforce Share:** {cluster_pct:.1f}%  
+                    """
+                )
+
+                st.markdown("#### Recommended HR Actions")
+
+                recommendations_html = "".join(
+                    f"""
                     <div class="recommendation-card">
-                        ✦ {rec}
+                        ✓ {rec}
                     </div>
-                    """, unsafe_allow_html=True)
+                    """
+                    for rec in info["recommendations"]
+                )
+
+                st.markdown(
+                    recommendations_html,
+                    unsafe_allow_html=True
+                )    
+            
 
     # Cluster distribution chart
     st.markdown("---")
